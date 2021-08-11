@@ -1,0 +1,20 @@
+<div class="calendar">
+    <table>
+        {{- range .Events}}
+        <tr>
+            <td class="time">
+                {{- if .IsToday }}
+                    {{- if .IsAllDay }}
+                        Today
+                    {{- else }}
+                        {{ .Time.Format "15:04" }}
+                    {{- end }}
+                {{- else }}
+                    {{ .Time.Format "Jan _2" }}
+                {{- end }}
+            </td>
+            <td class="description">{{ .Title }}</td>
+        </tr>
+        {{- end }}
+    </table>
+</div>
