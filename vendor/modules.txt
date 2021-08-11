@@ -1,0 +1,9 @@
+# github.com/ChannelMeter/iso8601duration v0.0.0-20150204201828-8da3af7a2a61
+github.com/ChannelMeter/iso8601duration
+# github.com/apognu/gocal v0.8.0
+## explicit
+github.com/apognu/gocal
+github.com/apognu/gocal/parser
+# github.com/glasslabs/looking-glass v0.1.0
+## explicit
+github.com/glasslabs/looking-glass/module/types
