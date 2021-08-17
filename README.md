@@ -41,10 +41,14 @@ The maximum number of days, including today, to display events for.
 
 The maximum number of events to display at any one time.
 
-### Calendar URL (calendar.url)
+### Calendar URL (calendar.[].url)
+
+*Required*
 
 The url of the calendar in ICS format.
 
-### Calendar Max Events (calendar.maxEvents)
+### Calendar Max Events (calendar.[].maxEvents)
+
+*Optional*
 
 The maximum number of events to display for this calendar at any one time.
