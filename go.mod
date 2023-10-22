@@ -1,4 +1,4 @@
-module github.com/glasslabs/clock
+module github.com/glasslabs/calendar
 
 go 1.21.3
 
