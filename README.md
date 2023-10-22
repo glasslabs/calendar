@@ -10,15 +10,15 @@ to under modules in your configuration.
 ```yaml
 modules:
  - name: simple-calendar
-    path: github.com/glasslabs/calendar
-    position: top:right
-    config:
-      timezone: Africa/Johannesburg
-      maxDays: 5
-      maxEvents: 20
-      calendars:
-        - url: https://www.calendarlabs.com/ical-calendar/ics/68/South_Africa_Holidays.ics
-          maxEvents: 10
+   url:  https://github.com/glasslabs/calendar/releases/download/v1.0.0/calendar.wasm
+   position: top:right
+   config:
+     timezone: Africa/Johannesburg
+     maxDays: 5
+     maxEvents: 20
+     calendars:
+       - url: https://www.calendarlabs.com/ical-calendar/ics/68/South_Africa_Holidays.ics
+         maxEvents: 10
 ```
 
 ## Configuration
