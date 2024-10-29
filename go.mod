@@ -3,7 +3,7 @@ module github.com/glasslabs/calendar
 go 1.22
 
 require (
-	github.com/apognu/gocal v0.9.0
+	github.com/apognu/gocal v0.9.1
 	github.com/glasslabs/client-go v0.2.0
 )
 
