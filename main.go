@@ -150,7 +150,7 @@ func (m *Module) load() {
 
 func (m *Module) render() {
 	var buf bytes.Buffer
-	if err := m.tmpl.Execute(&buf, map[string]interface{}{"Events": m.events}); err != nil {
+	if err := m.tmpl.Execute(&buf, map[string]any{"Events": m.events}); err != nil {
 		m.log.Error("Could not render HTML", "error", err.Error())
 		return
 	}
