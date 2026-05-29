@@ -1,10 +1,10 @@
+//go:build wasip1
+
 package main
 
 import (
-	"bytes"
-	_ "embed"
+	"context"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"sort"
@@ -13,14 +13,6 @@ import (
 
 	"github.com/apognu/gocal"
 	"github.com/glasslabs/client-go"
-)
-
-var (
-	//go:embed assets/style.css
-	css []byte
-
-	//go:embed assets/index.html
-	html []byte
 )
 
 // Event contains event information.
@@ -33,19 +25,19 @@ type Event struct {
 
 // Config is the module configuration.
 type Config struct {
-	Timezone  string     `yaml:"timezone"`
-	Calendars []Calendar `yaml:"calendars"`
+	Timezone  string     `json:"timezone"`
+	Calendars []Calendar `json:"calendars"`
 
-	MaxDays   int `yaml:"maxDays"`
-	MaxEvents int `yaml:"maxEvents"`
+	MaxDays   int `json:"maxDays"`
+	MaxEvents int `json:"maxEvents"`
 
-	Interval time.Duration `yaml:"interval"`
+	Interval time.Duration `json:"interval"`
 }
 
 // Calendar is a calendar configuration.
 type Calendar struct {
-	URL       string `yaml:"url"`
-	MaxEvents int    `yaml:"maxEvents"`
+	URL       string `json:"url"`
+	MaxEvents int    `json:"maxEvents"`
 }
 
 // NewConfig creates a default configuration for the module.
@@ -57,114 +49,121 @@ func NewConfig() Config {
 	}
 }
 
+var (
+	mod    *client.Module
+	log    *client.Logger
+	cfg    Config
+	tz     *time.Location
+	events []Event
+)
+
 func main() {
-	log := client.NewLogger()
-	mod, err := client.NewModule()
+	log = client.NewLogger()
+
+	var err error
+	mod, err = client.NewModule()
 	if err != nil {
 		log.Error("Could not create module", "error", err.Error())
 		return
 	}
 
-	cfg := NewConfig()
+	cfg = NewConfig()
 	if err = mod.ParseConfig(&cfg); err != nil {
 		log.Error("Could not parse config", "error", err.Error())
 		return
 	}
 
-	log.Info("Loading Module", "module", mod.Name())
+	//nolint:gosmopolitan
+	tz = time.Local
+	if cfg.Timezone != "" {
+		tz, err = time.LoadLocation(cfg.Timezone)
+		if err != nil {
+			log.Error("Invalid timezone", "error", err.Error())
 
-	m := &Module{
-		mod: mod,
-		cfg: cfg,
-		log: log,
+			//nolint:gosmopolitan
+			tz = time.Local
+		}
 	}
 
-	if err = m.setup(); err != nil {
-		log.Error("Could not setup module", "error", err.Error())
-		return
+	log.Info("Module ready", "module", mod.Name())
+
+	load()
+
+	reloadInterval := 30 * time.Minute
+	if cfg.Interval != 0 {
+		reloadInterval = cfg.Interval
 	}
-
-	m.load()
-	m.render()
-
-	evntTicker := time.NewTicker(cfg.Interval)
-	defer evntTicker.Stop()
-
-	rndrTicker := time.NewTicker(time.Minute)
-	defer rndrTicker.Stop()
 
 	for {
-		select {
-		case <-evntTicker.C:
-			m.load()
-		case <-rndrTicker.C:
-			m.render()
-		}
+		time.Sleep(reloadInterval)
+		load()
 	}
 }
 
-// Module is a calendar module.
-type Module struct {
-	mod *client.Module
-	cfg Config
-
-	tmpl *template.Template
-	tz   *time.Location
-
-	events []Event
-
-	log *client.Logger
-}
-
-func (m *Module) setup() error {
-	tmpl, err := template.New("html").Parse(string(html))
+func load() {
+	loaded, err := loadEvents()
 	if err != nil {
-		return fmt.Errorf("parsing html: %w", err)
-	}
-	m.tmpl = tmpl
-
-	//nolint:gosmopolitan
-	m.tz = time.Local
-	if m.cfg.Timezone != "" {
-		tz, err := time.LoadLocation(m.cfg.Timezone)
-		if err != nil {
-			return fmt.Errorf("parsing timezone: %w", err)
-		}
-		m.tz = tz
-	}
-
-	if err = m.mod.LoadCSS(string(css)); err != nil {
-		return fmt.Errorf("loading css: %w", err)
-	}
-	return nil
-}
-
-func (m *Module) load() {
-	events, err := m.loadEvents()
-	if err != nil {
-		m.log.Error("Could not load events", "error", err.Error())
+		log.Error("Could not load events", "error", err.Error())
 		return
 	}
-	m.events = events
+	events = loaded
+
+	render()
 }
 
-func (m *Module) render() {
-	var buf bytes.Buffer
-	if err := m.tmpl.Execute(&buf, map[string]any{"Events": m.events}); err != nil {
-		m.log.Error("Could not render HTML", "error", err.Error())
+func render() {
+	if len(events) == 0 {
+		mod.Render(client.NewVStack(
+			client.NewText("No upcoming events", client.WithColor("#888888"), client.WithFontSize(18)),
+		))
 		return
 	}
-	m.mod.Element().SetInnerHTML(buf.String())
+
+	const (
+		dowSize  float32 = 14
+		dateSize float32 = 20
+	)
+
+	rows := make([]*client.Row, 0, len(events))
+	for _, evt := range events {
+		dateStr := evt.Time.Format("2 Jan")
+		if !evt.IsAllDay {
+			dateStr = evt.Time.Format("2 Jan 15:04")
+		}
+
+		effectiveDowSize := dowSize
+		if evt.IsToday {
+			effectiveDowSize = dateSize
+		}
+
+		rows = append(rows, client.NewRow(
+			client.NewColumn(client.NewText(
+				evt.Time.Format("Mon "), client.WithColor("#888888"), client.WithFontSize(effectiveDowSize),
+			), 0),
+			client.NewColumn(client.NewText(
+				dateStr, client.WithColor("#ffffff"), client.WithFontSize(dateSize),
+			), 0),
+			client.NewColumn(client.NewText(
+				" | ", client.WithColor("#cccccc"), client.WithFontSize(dateSize),
+			), 0),
+			client.NewColumn(client.NewText(
+				evt.Title, client.WithColor("#cccccc"), client.WithFontSize(dateSize),
+			), 0),
+		))
+	}
+
+	mod.Render(client.NewTable(rows, client.WithRowSpacing(8)))
 }
 
-func (m *Module) loadEvents() ([]Event, error) {
-	start := time.Now()
-	end := time.Now().Add(time.Duration(m.cfg.MaxDays) * 24 * time.Hour)
+func loadEvents() ([]Event, error) {
+	now := time.Now().In(tz)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
+	end := start.AddDate(0, 0, cfg.MaxDays+1)
 
-	m.log.Info("Fetching events data", "module", "calendar", "id", m.mod.Name())
+	log.Info("Fetching calendar events")
 
 	var evnts []gocal.Event
-	for _, cal := range m.cfg.Calendars {
+	for _, cal := range cfg.Calendars {
 		e, err := loadCalendar(cal.URL, cal.MaxEvents, start, end)
 		if err != nil {
 			return nil, err
@@ -175,25 +174,27 @@ func (m *Module) loadEvents() ([]Event, error) {
 	sort.Slice(evnts, func(i, j int) bool {
 		return evnts[i].Start.Before(*evnts[j].Start)
 	})
-	if m.cfg.MaxEvents > 0 && len(evnts) > m.cfg.MaxEvents {
-		evnts = evnts[:m.cfg.MaxEvents]
+	if cfg.MaxEvents > 0 && len(evnts) > cfg.MaxEvents {
+		evnts = evnts[:cfg.MaxEvents]
 	}
 
-	events := make([]Event, 0, len(evnts))
+	result := make([]Event, 0, len(evnts))
 	for _, evnt := range evnts {
-		events = append(events, Event{
+		result = append(result, Event{
 			Title:    evnt.Summary,
-			Time:     evnt.Start.In(m.tz),
+			Time:     evnt.Start.In(tz),
 			IsAllDay: isAllDayEvent(evnt),
 			IsToday:  isToday(evnt.Start),
 		})
 	}
-	return events, nil
+	return result, nil
 }
 
 func loadCalendar(url string, maxEvents int, start, end time.Time) ([]gocal.Event, error) {
-	//nolint:noctx
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -237,7 +238,7 @@ func isAllDayEvent(evnt gocal.Event) bool {
 	}
 
 	var e time.Time
-	if evnt.Start != nil {
+	if evnt.End != nil {
 		e = *evnt.End
 	}
 
@@ -248,6 +249,7 @@ func isToday(t *time.Time) bool {
 	if t == nil {
 		return false
 	}
-
-	return t.Truncate(24 * time.Hour).Equal(time.Now().UTC().Truncate(24 * time.Hour))
+	lt := t.In(tz)
+	now := time.Now().In(tz)
+	return lt.Year() == now.Year() && lt.Month() == now.Month() && lt.Day() == now.Day()
 }
